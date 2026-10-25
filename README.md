@@ -179,23 +179,23 @@ Hasil pengujian (isi sesuai kenyataan):
 
 1. Halaman Setup dan Registrasi
    ![Halaman registrasi](deploy/01-registrasi.png)
-   Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama. **[ISI]**
+   Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama.
 
 2. Halaman Utama
    ![Halaman utama](deploy/02-halaman-utama.png)
-   Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung. **[ISI]**
+   Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung.
 
 3. Membuat Komunitas dan Kanal
    ![Membuat server](deploy/03-komunitas.png)
-   Dibuat komunitas **CS-IPB Lab** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. **[ISI]**
+   Dibuat komunitas **CS-IPB Lab** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. 
 
 4. Mengirim Pesan dan Lampiran
    ![Pesan](deploy/04-pesan.png)
-   Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal. **[ISI]**
+   Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal.
 
 5. Pengaturan Pengguna
    ![Pengaturan](deploy/05-pengaturan.png)
-   Pengguna dapat mengubah profil dan tampilan. **[ISI]**
+   Pengguna dapat mengubah profil dan tampilan.
 
 ## Pembahasan
 
