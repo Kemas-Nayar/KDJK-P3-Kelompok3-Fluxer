@@ -685,8 +685,6 @@ Study Room
 
 Members:
 - Kemas
-- Andi
-- Siti
 ```
 
 ## Role dan Permission
@@ -723,9 +721,6 @@ IPB Computer Science
 
 Members:
 - Kemas
-- Andi
-- Budi
-- Siti
 
 Text Channels:
 # general
