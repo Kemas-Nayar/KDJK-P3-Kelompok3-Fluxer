@@ -178,23 +178,23 @@ Hasil pengujian (isi sesuai kenyataan):
 | Upload lampiran | <img width="956" height="409" alt="image" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
 
 1. Halaman Setup dan Registrasi
-   ![Halaman registrasi](SS%20Web/01-registrasi.png)
+   ![Halaman registrasi](deploy/01-registrasi.png)
    Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama. **[ISI]**
 
 2. Halaman Utama
-   ![Halaman utama](SS%20Web/02-halaman-utama.png)
+   ![Halaman utama](deploy/02-halaman-utama.png)
    Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung. **[ISI]**
 
 3. Membuat Komunitas dan Kanal
-   ![Membuat server](SS%20Web/03-komunitas.png)
+   ![Membuat server](deploy/03-komunitas.png)
    Dibuat komunitas **CS-IPB Lab** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. **[ISI]**
 
 4. Mengirim Pesan dan Lampiran
-   ![Pesan](SS%20Web/04-pesan.png)
+   ![Pesan](deploy/04-pesan.png)
    Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal. **[ISI]**
 
 5. Pengaturan Pengguna
-   ![Pengaturan](SS%20Web/05-pengaturan.png)
+   ![Pengaturan](deploy/05-pengaturan.png)
    Pengguna dapat mengubah profil dan tampilan. **[ISI]**
 
 ## Pembahasan
