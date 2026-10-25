@@ -2,964 +2,174 @@
 
 <img width="1280" height="335" alt="Fluxer_app_logo svg" src="https://github.com/user-attachments/assets/02164b98-afa3-4db8-9bdd-3d078ddef7b9" />
 
+
 ## Sekilas Tentang
 
-Fluxer merupakan aplikasi komunikasi real-time berbasis web yang dirancang sebagai platform komunikasi komunitas dan tim. Fluxer menyediakan konsep server, channel, pengguna, pesan, serta komunikasi suara yang memungkinkan beberapa pengguna berkomunikasi dalam satu platform.
+Fluxer adalah aplikasi chat komunitas open source (lisensi AGPLv3) yang dapat di-hosting sendiri, dirancang sebagai alternatif Discord. Fitur utamanya meliputi server komunitas, kanal teks, pesan langsung, upload berkas, pencarian pesan, serta suara/video.
 
-Fluxer dikembangkan sebagai aplikasi open-source sehingga source code-nya dapat dipelajari, dikembangkan, dan dijalankan pada infrastruktur sendiri (*self-hosted*).
+Pengaturan self-hosting resminya berjalan di atas Docker Compose dengan banyak layanan (sekitar 25 container menurut salah satu sumber), antara lain PostgreSQL, Valkey, NATS, Meilisearch, SeaweedFS, LiveKit, API, gateway, worker, dan Caddy sebagai proxy.
 
-Secara konsep, Fluxer memiliki fungsi yang mirip dengan aplikasi komunikasi seperti Discord, tetapi memberikan lebih banyak kontrol kepada administrator terhadap aplikasi dan infrastrukturnya.
+## Instalasi
 
-### Fitur Utama
+Prasyarat:
+- VPS Ubuntu Server 24.04 LTS dengan RAM minimal 8 GB (lebih besar lebih aman) dan IP publik.
+- Domain/subdomain dengan A record yang mengarah ke IP VPS.
+- Port 80 dan 443 terbuka di firewall.
+- Docker Engine dan plugin Docker Compose (ikuti panduan resmi: https://docs.docker.com/engine/install/ubuntu/).
 
-Beberapa fungsi utama yang tersedia dalam Fluxer antara lain:
+Verifikasi Docker:
 
-- Registrasi dan autentikasi pengguna.
-- Pengelolaan profil pengguna.
-- Pembuatan dan pengelolaan server.
-- Pembuatan channel.
-- Komunikasi pesan secara real-time.
-- Pengiriman attachment/file.
-- Voice channel.
-- Pengelolaan anggota server.
-- Role dan permission.
-- Notifikasi.
-- Pengelolaan komunitas.
-
-Arsitektur aplikasi secara umum dapat digambarkan sebagai berikut:
-
-```text
-                         Client
-                    Web Browser / App
-                           |
-                           v
-                    +-------------+
-                    |   Fluxer    |
-                    | Application |
-                    +------+------+
-                           |
-             +-------------+-------------+
-             |                           |
-             v                           v
-        Database                    Real-time
-                                   Communication
-             |                           |
-             +-------------+-------------+
-                           |
-                           v
-                       Storage
 ```
-
----
-
-# Instalasi
-
-## Prasyarat
-
-Sebelum melakukan instalasi Fluxer, siapkan lingkungan Linux/server dan perangkat lunak yang diperlukan oleh versi Fluxer yang digunakan.
-
-Perangkat lunak yang umum diperlukan antara lain:
-
-- Linux
-- Git
-- Docker
-- Docker Compose
-- Database yang digunakan oleh Fluxer
-- Node.js dan package manager apabila diperlukan oleh komponen frontend/backend
-- Reverse proxy seperti Nginx untuk deployment production
-
-Periksa instalasi Git:
-
-```bash
-git --version
-```
-
-Periksa Docker:
-
-```bash
+sudo systemctl enable --now docker
 docker --version
-```
-
-Periksa Docker Compose:
-
-```bash
 docker compose version
+sudo docker run --rm hello-world
 ```
 
-Jika menggunakan Node.js:
+Unduh berkas deployment resmi:
 
-```bash
-node --version
-npm --version
+```
+sudo mkdir -p /opt/fluxer
+sudo chown "$USER":"$(id -gn)" /opt/fluxer
+cd /opt/fluxer
+
+BASE="https://raw.githubusercontent.com/fluxerapp/fluxer/main/deploy/self-hosting"
+curl -fLO "$BASE/docker-compose.yml"
+curl -fLO "$BASE/Caddyfile"
+curl -fsSL "$BASE/.env.example" -o .env
+chmod 600 .env
 ```
 
-> **Catatan:** versi dependency harus disesuaikan dengan dokumentasi dan konfigurasi pada commit/release Fluxer yang digunakan. Jangan menggunakan versi dependency secara sembarang apabila repository menetapkan versi tertentu.
+Atur domain di `.env`. Nama variabel dan nilai untuk domain publik dengan HTTPS dicocokkan dengan komentar di `.env.example` versi yang diunduh. <img width="1172" height="983" alt="image" src="https://github.com/user-attachments/assets/4bbe9d8e-1e47-4057-a903-fb0fa168c5ee" />
 
-## Clone Repository
+Ganti semua nilai `CHANGE_ME` dengan secret acak:
 
-Clone repository Fluxer menggunakan Git:
-
-```bash
-git clone <URL-REPOSITORY-FLUXER>
+```
+grep -n 'CHANGE_ME' .env
+openssl rand -hex 32     # ulangi untuk tiap variabel, lalu isi ke .env
 ```
 
-Masuk ke direktori project:
+Pada percobaan ini tersisa tiga: `POSTGRES_PASSWORD`, `MEILI_MASTER_KEY`, dan `LIVEKIT_API_SECRET`.
 
-```bash
-cd fluxer
+Buat setup token agar instance baru dapat didaftarkan:
+
+```
+TOKEN=$(openssl rand -hex 32)
+sed -i '/^#FLUXER_SETUP_TOKEN=/d; /^FLUXER_SETUP_TOKEN=/d' .env
+printf '\nFLUXER_SETUP_TOKEN=%s\n' "$TOKEN" >> .env
 ```
 
-Periksa isi repository:
+Validasi dan jalankan:
 
-```bash
-ls
+```
+sudo docker compose config --quiet
+sudo docker compose pull
+sudo docker compose up -d
+sudo docker compose ps
 ```
 
-## Instalasi Dependency
+Kemudian kunjungi `https://<domain-anda>`, masukkan setup token, dan buat akun.
 
-Jika project menyediakan file `package.json`, dependency dapat dipasang menggunakan package manager yang sesuai.
+### Kendala yang ditemui (uji awal di VM lokal)
 
-Dengan npm:
+| Gejala | Penyebab | Solusi |
+|---|---|---|
+| Web tidak terbuka dari host, padahal `curl` di dalam VM berstatus 200 | VirtualBox mode NAT: host tidak bisa menjangkau IP VM | Tambahkan port forwarding (host 19080 ke VM 19080) |
+| Akses lewat IP/`127.0.0.1` menghasilkan halaman kosong | Caddy memilih respons berdasarkan hostname | Akses lewat nama domain yang dikonfigurasi |
+| Daftar akun: "Verification required. Try again." | Respons asli API: `SETUP_TOKEN_REQUIRED`, instance belum di-setup | Isi `FLUXER_SETUP_TOKEN` di `.env`, restart `api` |
+| Console: `crypto.subtle is undefined` / widget ALTCHA tidak muncul di Android | ALTCHA butuh Web Crypto yang hanya tersedia di *secure context* (HTTPS atau localhost) | Gunakan HTTPS (domain publik di VPS) |
 
-```bash
-npm install
+
+## Konfigurasi (opsional)
+
+Batas memori bawaan Fluxer ditujukan untuk host 16 GB. Pada RAM 8 GB, nilai berikut dipakai sebagai titik awal (tambahkan di bagian bawah `.env`, lalu pantau dengan `docker stats --no-stream`):
+
+```
+FLUXER_POSTGRES_MEMORY_LIMIT=1gb
+FLUXER_MEILISEARCH_MEMORY_LIMIT=768mb
+FLUXER_MEILISEARCH_MAX_INDEXING_MEMORY=128mb
+FLUXER_MEILISEARCH_MAX_INDEXING_THREADS=1
+FLUXER_SEAWEEDFS_MEMORY_LIMIT=768mb
+FLUXER_API_MEMORY_LIMIT=1280mb
+FLUXER_API_NODE_HEAP_MB=768
+FLUXER_WORKER_MEMORY_LIMIT=1280mb
+FLUXER_WORKER_NODE_HEAP_MB=768
+FLUXER_GATEWAY_MEMORY_LIMIT=512mb
+FLUXER_LIVEKIT_MEMORY_LIMIT=384mb
 ```
 
-atau apabila repository menyediakan lockfile:
+Daftar variabel lengkap ada di `.env.example`. Nilai ini eksperimen, bukan konfigurasi resmi yang dijamin stabil.
 
-```bash
-npm ci
-```
 
-Jika project menggunakan package manager lain, gunakan package manager yang ditentukan oleh repository.
+## Cara Pemakaian
 
-## Konfigurasi Environment
+Hasil pengujian (isi sesuai kenyataan):
 
-Salin file environment contoh apabila tersedia:
-
-```bash
-cp .env.example .env
-```
-
-Kemudian edit:
-
-```bash
-nano .env
-```
-
-Contoh parameter yang dapat ditemukan pada aplikasi web:
-
-```env
-APP_URL=http://localhost
-DATABASE_URL=...
-REDIS_URL=...
-```
-
-Nilai aktual harus mengikuti `.env.example` dan dokumentasi Fluxer.
-
-## Menjalankan dengan Docker
-
-Apabila repository menyediakan `docker-compose.yml` atau `compose.yml`, jalankan:
-
-```bash
-docker compose up -d
-```
-
-Periksa status service:
-
-```bash
-docker compose ps
-```
-
-Periksa log:
-
-```bash
-docker compose logs
-```
-
-Untuk mengikuti log secara real-time:
-
-```bash
-docker compose logs -f
-```
-
-Setelah seluruh service berhasil berjalan, buka alamat aplikasi melalui browser.
-
-Contoh:
-
-```text
-http://localhost
-```
-
-atau port yang ditentukan oleh konfigurasi Fluxer.
-
----
-
-# Konfigurasi
-
-Konfigurasi tambahan dapat dilakukan untuk meningkatkan fungsi, keamanan, dan performa aplikasi.
-
-## Environment Variable
-
-File `.env` digunakan untuk menyimpan konfigurasi yang bersifat spesifik terhadap deployment.
-
-Contoh:
-
-```env
-APP_URL=https://fluxer.example.com
-DATABASE_URL=...
-REDIS_URL=...
-```
-
-Jangan memasukkan secret atau password ke dalam repository Git.
-
-Tambahkan `.env` ke `.gitignore` jika belum tersedia:
-
-```text
-.env
-.env.local
-```
-
-## Database
-
-Fluxer memerlukan database untuk menyimpan data aplikasi seperti:
-
-- akun pengguna;
-- server;
-- channel;
-- pesan;
-- role;
-- permission;
-- konfigurasi aplikasi; dan
-- data lain yang diperlukan oleh aplikasi.
-
-Database sebaiknya hanya dapat diakses oleh service yang memang membutuhkannya.
-
-Pada deployment production, hindari mengekspos port database secara langsung ke internet.
-
-## Reverse Proxy
-
-Untuk deployment production, Fluxer dapat ditempatkan di belakang reverse proxy seperti Nginx.
-
-Arsitektur:
-
-```text
-Internet
-   |
-   | HTTPS :443
-   v
-+-------+
-| Nginx |
-+---+---+
-    |
-    | HTTP / WebSocket
-    v
-+-----------+
-|  Fluxer   |
-|  Server   |
-+-----+-----+
-      |
-      +--------> Database
-      |
-      +--------> Cache / Redis
-      |
-      +--------> File Storage
-```
-
-Reverse proxy dapat digunakan untuk:
-
-- HTTPS/TLS.
-- Domain.
-- Routing request.
-- WebSocket.
-- Compression.
-- Static file caching.
-- Rate limiting.
-- Menyembunyikan port internal aplikasi.
-
-## HTTPS
-
-Untuk server production, gunakan HTTPS.
-
-Contoh domain:
-
-```text
-https://fluxer.example.com
-```
-
-Sertifikat TLS dapat diperoleh menggunakan Let's Encrypt atau certificate authority lainnya.
-
-## Batas Upload
-
-Jika instance Fluxer digunakan untuk mengirim attachment, batas ukuran file perlu disesuaikan dengan kemampuan server.
-
-Perhatikan bahwa batas upload dapat ditentukan oleh lebih dari satu komponen:
-
-```text
-Browser
-   |
-   v
-Nginx / Reverse Proxy
-   |
-   v
-Fluxer
-   |
-   v
-Storage
-```
-
-Pastikan seluruh komponen menggunakan batas yang konsisten.
-
-## Cache
-
-Jika Fluxer menggunakan Redis atau mekanisme cache lainnya, pastikan service cache berjalan dan dapat diakses oleh aplikasi.
-
-Cache dapat membantu mengurangi beban database dan meningkatkan respons aplikasi.
-
-## Plugin dan Integrasi
-
-Fungsi tambahan dapat diberikan melalui integrasi yang didukung oleh Fluxer atau komponen eksternal.
-
-Contoh integrasi yang dapat dipertimbangkan:
-
-- OAuth/social login.
-- Bot.
-- Webhook.
-- Integrasi layanan eksternal.
-- Markdown.
-- Integrasi penyimpanan file.
-- Monitoring.
-- Logging.
-
-> Tidak semua integrasi di atas merupakan plugin bawaan Fluxer. Implementasi harus mengikuti fitur yang benar-benar tersedia pada versi Fluxer yang digunakan.
-
----
-
-# Maintenance
-
-Maintenance diperlukan agar instance Fluxer tetap stabil, aman, dan dapat digunakan dalam jangka panjang.
-
-## Backup Database
-
-Database harus di-backup secara berkala.
-
-Contoh jadwal menggunakan `cron`:
-
-```cron
-0 2 * * 0 /path/to/backup-fluxer.sh
-```
-
-Jadwal tersebut menjalankan backup setiap hari Minggu pukul 02.00.
-
-Contoh struktur backup:
-
-```text
-backup/
-├── database/
-│   ├── fluxer-2026-10-04.sql
-│   ├── fluxer-2026-10-11.sql
-│   └── ...
-└── files/
-    └── ...
-```
-
-Backup sebaiknya disimpan pada lokasi yang berbeda dari server utama.
-
-## Backup File
-
-Selain database, file attachment atau data persistent lainnya juga perlu di-backup.
-
-Contoh:
-
-```bash
-tar -czf fluxer-files-$(date +%F).tar.gz /path/to/fluxer-data
-```
-
-## Update Aplikasi
-
-Sebelum melakukan update:
-
-1. Backup database.
-2. Backup file persistent.
-3. Periksa release atau perubahan dependency.
-4. Perbarui source code.
-5. Jalankan migration jika diperlukan.
-6. Restart service.
-7. Periksa log.
-
-Contoh:
-
-```bash
-git pull
-docker compose pull
-docker compose up -d
-```
-
-## Pemeriksaan Service
-
-Periksa container:
-
-```bash
-docker compose ps
-```
-
-Periksa log:
-
-```bash
-docker compose logs --tail=100
-```
-
-Periksa penggunaan resource:
-
-```bash
-docker stats
-```
-
-## Membersihkan Resource Docker
-
-Resource Docker yang tidak digunakan dapat diperiksa dengan:
-
-```bash
-docker system df
-```
-
-Resource yang tidak diperlukan dapat dibersihkan dengan hati-hati:
-
-```bash
-docker system prune
-```
-
-> Jangan menjalankan perintah pembersihan secara sembarangan pada production karena dapat menghapus resource yang masih diperlukan.
-
-## Maintenance Berkala
-
-Contoh jadwal maintenance:
-
-| Aktivitas | Frekuensi |
+| Pengujian | Hasil |
 |---|---|
-| Backup database | Harian |
-| Backup file | Harian |
-| Pemeriksaan log | Harian |
-| Pemeriksaan disk | Mingguan |
-| Update aplikasi | Sesuai release |
-| Pengujian restore backup | Bulanan |
-| Audit keamanan | Berkala |
+| Semua layanan berjalan | <img width="1915" height="703" alt="image" src="https://github.com/user-attachments/assets/ae5e5983-ae88-4504-a325-7192e0b3e091" /> |
+| Web dapat dibuka dari internet | <img width="1280" height="1498" alt="Screenshot_2026-10-25-13-14-47-340_com android chrome-edit" src="https://github.com/user-attachments/assets/701f75d5-9f95-4b79-9e27-524e464078e0" /> | 
+| Setup dan pembuatan akun | <img width="1280" height="2772" alt="Screenshot_2026-10-25-13-16-25-168_com android chrome" src="https://github.com/user-attachments/assets/b0a934a9-99cb-48de-9325-8e8dae561ed8" /> |
+| Kirim dan terima pesan | <img width="1600" height="873" alt="image" src="https://github.com/user-attachments/assets/41aaacc7-7b88-4723-b157-f10c830533ed" /> |
+| Upload lampiran | <img width="956" height="409" alt="image" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
 
----
 
-# Otomatisasi
+## Pembahasan
 
-Proses instalasi dan maintenance dapat dibuat otomatis menggunakan shell script.
+### Kelebihan Fluxer
 
-Contoh struktur:
+1. **Open source dan self-hosted**: kode terbuka (AGPLv3) dan data tetap di server sendiri.
+2. **Pengalaman mirip Discord**: server, kanal, pesan langsung, upload, dan pencarian sehingga mudah dipakai pengguna baru.
+3. **Deployment resmi dikemas dalam Docker Compose**: instalasi dapat diulang dengan beberapa perintah.
+4. **ALTCHA bawaan**: perlindungan pendaftaran tanpa layanan CAPTCHA eksternal.
 
-```text
-fluxer/
-├── setup.sh
-├── backup.sh
-├── maintenance.sh
-└── README.md
-```
+### Kekurangan Fluxer
 
-## Setup Script
+1. **Berat sumber daya**: banyak layanan sekaligus. Pada RAM 8 GB perlu tuning manual karena batas bawaan ditujukan untuk 16 GB.
+2. **Konfigurasi rumit**: banyak secret wajib, routing bergantung hostname, dan perlu setup token.
+3. **Pesan error kurang jelas**: "Verification required" muncul padahal penyebab aslinya `SETUP_TOKEN_REQUIRED`.
+4. **Masih berkembang**: pengembang menyebut membuat self-hosting andal sebagai prioritas, sehingga kemungkinan masih ada kekurangan.
+5. **Butuh HTTPS**: ALTCHA tidak berjalan di HTTP non-localhost, sehingga tidak cocok untuk akses HTTP biasa dari perangkat lain.
 
-Contoh `setup.sh`:
+### Perbandingan Fluxer dengan Aplikasi Sejenis
 
-```bash
-#!/bin/bash
+*(Poin pada bagian ini berdasarkan telaah dokumentasi dan artikel, bukan pengujian langsung. **[ISI]** verifikasi ulang sebelum dikumpulkan.)*
 
-set -e
+#### 1. Fluxer vs Discord
 
-echo "=== Fluxer Setup ==="
+- **Kelebihan Fluxer:**
+  * Open source dan dapat di-hosting sendiri, data di server sendiri.
+  * Tidak bergantung pada satu penyedia layanan.
+- **Kelebihan Discord:**
+  * Komunitas dan ekosistem (bot, integrasi) jauh lebih besar.
+  * Matang dan stabil, tidak perlu mengelola server sendiri.
 
-if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker belum terinstall."
-    exit 1
-fi
+#### 2. Fluxer vs Revolt
 
-if ! docker compose version >/dev/null 2>&1; then
-    echo "Docker Compose belum tersedia."
-    exit 1
-fi
+- **Kelebihan Fluxer:**
+  * Berusaha menyamai pengalaman Discord selengkap mungkin. <img width="1920" height="1040" alt="image" src="https://github.com/user-attachments/assets/422c7624-2a58-4c7c-a038-a0faec47b78d" />
+- **Kelebihan Revolt:**
+  * Dianggap lebih stabil saat ini oleh salah satu ulasan, dan sama-sama dapat di-hosting sendiri.
 
-echo "Pulling images..."
-docker compose pull
+#### 3. Fluxer vs Matrix/Element
 
-echo "Starting services..."
-docker compose up -d
+- **Kelebihan Fluxer:**
+  * Antarmuka dan alur penggunaan yang familiar bagi pengguna Discord.
+- **Kelebihan Matrix/Element:**
+  * Protokol terbuka dengan federasi antar server dan banyak pilihan aplikasi klien.
+  * Mendukung enkripsi end-to-end.
 
-echo "Checking services..."
-docker compose ps
+### Kesimpulan
 
-echo "Fluxer setup completed."
-```
+*(Draf, sesuaikan setelah pengujian selesai.)* Fluxer cocok bagi komunitas yang ingin alternatif Discord dengan kontrol data penuh dan pengalaman penggunaan yang familiar. Namun, kebutuhan sumber daya yang besar, konfigurasi yang rumit, dan statusnya yang masih berkembang membuatnya kurang ideal untuk server kecil berspesifikasi rendah. Aplikasi seperti Discord (kemudahan dan ekosistem), Revolt (stabilitas), atau Matrix/Element (federasi dan enkripsi) bisa lebih tepat sesuai kebutuhan.
 
-Jadikan executable:
 
-```bash
-chmod +x setup.sh
-```
+## Referensi
 
-Jalankan:
-
-```bash
-./setup.sh
-```
-
-## Backup Script
-
-Contoh `backup.sh`:
-
-```bash
-#!/bin/bash
-
-set -e
-
-BACKUP_DIR="$HOME/fluxer-backup"
-DATE=$(date +%Y-%m-%d_%H-%M-%S)
-
-mkdir -p "$BACKUP_DIR"
-
-echo "Starting backup: $DATE"
-
-# Tambahkan perintah backup database
-# sesuai database yang digunakan oleh deployment Fluxer.
-
-echo "Backup completed."
-```
-
-Jadikan executable:
-
-```bash
-chmod +x backup.sh
-```
-
-## Maintenance Script
-
-Contoh `maintenance.sh`:
-
-```bash
-#!/bin/bash
-
-set -e
-
-echo "Starting Fluxer maintenance..."
-
-docker compose pull
-docker compose up -d
-docker compose ps
-
-echo "Maintenance completed."
-```
-
-Jadikan executable:
-
-```bash
-chmod +x maintenance.sh
-```
-
-## Cron
-
-Script maintenance dapat dijalankan otomatis menggunakan cron.
-
-Edit crontab:
-
-```bash
-crontab -e
-```
-
-Contoh:
-
-```cron
-# Backup setiap hari pukul 02.00
-0 2 * * * /path/to/backup.sh
-
-# Maintenance setiap Minggu pukul 03.00
-0 3 * * 0 /path/to/maintenance.sh
-```
-
----
-
-# Cara Pemakaian
-
-## Membuka Aplikasi
-
-Setelah Fluxer berhasil dijalankan, buka browser dan akses alamat instance.
-
-Contoh:
-
-```text
-http://localhost
-```
-
-Untuk deployment production:
-
-```text
-https://fluxer.example.com
-```
-
-## Registrasi
-
-Pengguna dapat membuat akun melalui halaman registrasi.
-
-Contoh data dummy:
-
-```text
-Username : Kemas
-Email    : kemas@example.com
-Password : ********
-```
-
-Setelah registrasi, pengguna dapat melakukan login.
-
-## Membuat Server
-
-Setelah login, pengguna dapat membuat server baru.
-
-Contoh:
-
-```text
-Nama Server:
-IPB Computer Science
-```
-
-Server dapat digunakan untuk mengelompokkan pengguna berdasarkan komunitas atau tujuan tertentu.
-
-## Membuat Channel
-
-Contoh struktur server:
-
-```text
-IPB Computer Science
-│
-├── TEXT
-│   ├── general
-│   ├── announcements
-│   ├── programming
-│   ├── operating-systems
-│   └── networking
-│
-└── VOICE
-    ├── General
-    └── Study Room
-```
-
-## Komunikasi Teks
-
-Pengguna dapat mengirim pesan pada channel.
-
-Contoh:
-
-```text
-# programming
-
-Kemas:
-Ada yang sudah mengerjakan tugas Operating System?
-
-Andi:
-Sudah. Bagian Peterson Algorithm sudah selesai.
-
-Siti:
-Aku masih mengerjakan bagian semaphore.
-```
-
-## Attachment
-
-Pengguna dapat mengirim file apabila fitur attachment tersedia dan ukuran file memenuhi batas yang dikonfigurasi.
-
-Contoh:
-
-```text
-Kemas mengirim:
-Tugas_OS.pdf
-```
-
-## Voice Channel
-
-Pengguna dapat masuk ke voice channel untuk berkomunikasi menggunakan suara.
-
-Contoh:
-
-```text
-Study Room
-
-Members:
-- Kemas
-```
-
-## Role dan Permission
-
-Administrator dapat mengatur role pengguna.
-
-Contoh:
-
-```text
-Administrator
-├── Manage Server
-├── Manage Channels
-├── Manage Roles
-└── Manage Members
-
-Moderator
-├── Manage Messages
-└── Manage Members
-
-Member
-├── Send Messages
-└── Join Voice
-```
-
-Role memungkinkan administrator membatasi operasi yang dapat dilakukan pengguna.
-
-## Contoh Data Demonstrasi
-
-Gunakan data yang realistis ketika melakukan demonstrasi.
-
-```text
-Server:
-IPB Computer Science
-
-Members:
-- Kemas
-
-Text Channels:
-# general
-# programming
-# operating-systems
-# networking
-
-Voice Channels:
-Study Room
-General
-```
-
-## Screenshot
-
-Screenshot aplikasi dapat ditempatkan pada direktori:
-
-```text
-docs/
-└── screenshots/
-    ├── login.png
-    ├── register.png
-    ├── server.png
-    ├── chat.png
-    ├── members.png
-    └── voice.png
-```
-
-Contoh penggunaan:
-
-```markdown
-### Halaman Login
-
-![Halaman Login](docs/screenshots/login.png)
-
-### Server
-
-![Halaman Server](docs/screenshots/server.png)
-
-### Chat
-
-![Channel Chat](docs/screenshots/chat.png)
-
-### Voice Channel
-
-![Voice Channel](docs/screenshots/voice.png)
-```
-
-Screenshot sebaiknya menunjukkan aplikasi yang sudah berisi data dummy sehingga fitur dapat terlihat dengan jelas.
-
----
-
-# Pembahasan
-
-## Kelebihan
-
-### 1. Open Source
-
-Fluxer dikembangkan sebagai proyek open-source sehingga source code dapat dipelajari dan dikembangkan.
-
-Hal ini memberikan kesempatan bagi developer untuk memahami bagaimana aplikasi komunikasi real-time dibangun.
-
-### 2. Self-hosted
-
-Aplikasi dapat dijalankan pada server sendiri.
-
-Keuntungan dari pendekatan ini adalah administrator memiliki kontrol lebih besar terhadap:
-
-- server;
-- database;
-- konfigurasi;
-- storage;
-- network;
-- backup; dan
-- deployment.
-
-### 3. Komunikasi Real-time
-
-Aplikasi komunikasi membutuhkan kemampuan untuk mengirim dan menerima data secara cepat.
-
-Fluxer menyediakan komunikasi real-time sehingga pengguna dapat bertukar pesan tanpa harus melakukan refresh halaman secara manual.
-
-### 4. Server dan Channel
-
-Penggunaan server dan channel membuat komunikasi dapat dikelompokkan berdasarkan komunitas, organisasi, mata kuliah, proyek, atau topik tertentu.
-
-### 5. Role dan Permission
-
-Role dan permission memberikan mekanisme untuk membedakan hak akses pengguna.
-
-Contohnya administrator memiliki hak yang lebih tinggi dibandingkan member biasa.
-
-### 6. Dapat Dikembangkan
-
-Karena source code tersedia, developer dapat mempelajari dan memodifikasi aplikasi sesuai kebutuhan.
-
----
-
-## Kekurangan
-
-### 1. Deployment Lebih Kompleks
-
-Self-hosting membuat administrator harus memahami berbagai komponen seperti:
-
-- Linux;
-- Docker;
-- database;
-- networking;
-- reverse proxy;
-- HTTPS;
-- storage; dan
-- monitoring.
-
-Hal ini membuat instalasi lebih kompleks dibandingkan menggunakan layanan hosted.
-
-### 2. Maintenance Menjadi Tanggung Jawab Administrator
-
-Administrator harus melakukan:
-
-- backup;
-- update;
-- monitoring;
-- security patch;
-- troubleshooting; dan
-- pengelolaan server.
-
-### 3. Membutuhkan Resource
-
-Aplikasi komunikasi real-time membutuhkan resource server, terutama ketika jumlah pengguna meningkat.
-
-Resource yang perlu diperhatikan antara lain:
-
-- CPU;
-- RAM;
-- storage;
-- bandwidth; dan
-- database storage.
-
-### 4. Skalabilitas
-
-Ketika jumlah pengguna meningkat, konfigurasi sederhana mungkin tidak lagi mencukupi.
-
-Administrator dapat membutuhkan:
-
-- load balancer;
-- beberapa application server;
-- database optimization;
-- caching;
-- object storage; dan
-- monitoring yang lebih baik.
-
----
-
-# Perbandingan dengan Aplikasi Sejenis
-
-Fluxer dapat dibandingkan dengan beberapa platform komunikasi seperti Discord dan Mattermost.
-
-| Fitur | Fluxer | Discord | Mattermost |
-|---|---|---|---|
-| Open source | Ya | Tidak | Ya |
-| Self-hosted | Ya | Tidak | Ya |
-| Text chat | Ya | Ya | Ya |
-| Voice communication | Ya | Ya | Ya |
-| Server / workspace | Ya | Ya | Ya |
-| Channel | Ya | Ya | Ya |
-| Role / permission | Ya | Ya | Ya |
-| Custom deployment | Ya | Terbatas | Ya |
-| Kontrol server | Tinggi | Rendah | Tinggi |
-| Cocok untuk komunitas | Ya | Sangat cocok | Ya |
-| Cocok untuk organisasi | Ya | Ya | Sangat cocok |
-
-### Fluxer vs Discord
-
-Discord merupakan platform komunikasi yang sangat populer dan memiliki ekosistem besar. Pengguna dapat langsung membuat akun dan menggunakan layanan tanpa harus mengelola server sendiri.
-
-Fluxer memiliki pendekatan yang lebih menarik untuk pengguna yang menginginkan kontrol terhadap infrastruktur dan source code karena dapat digunakan sebagai platform self-hosted.
-
-### Fluxer vs Mattermost
-
-Mattermost lebih berfokus pada komunikasi organisasi dan kolaborasi tim. Fluxer memiliki pendekatan yang lebih dekat dengan platform komunitas dan komunikasi real-time seperti Discord.
-
-Keduanya memiliki keuntungan dari sisi self-hosting dan kontrol terhadap infrastruktur.
-
----
-
-# Kesimpulan
-
-Fluxer merupakan aplikasi komunikasi real-time yang dapat digunakan untuk membangun platform komunikasi komunitas maupun tim.
-
-Fitur server, channel, pesan, voice, role, dan permission membuat Fluxer dapat digunakan untuk berbagai kebutuhan komunikasi.
-
-Dari sisi pembelajaran, Fluxer juga menarik karena mencakup berbagai aspek ilmu komputer, seperti:
-
-- Web application.
-- Client-server architecture.
-- Database.
-- Networking.
-- Real-time communication.
-- Authentication.
-- Authorization.
-- WebSocket.
-- File storage.
-- Deployment.
-- Containerization.
-- Server administration.
-
-Penggunaan Fluxer secara self-hosted juga memberikan kesempatan untuk mempelajari proses deployment aplikasi web secara langsung, mulai dari konfigurasi server hingga maintenance dan backup.
-
----
-
-# Referensi
-
-1. Fluxer GitHub Repository  
-   https://github.com/fluxerapp/fluxer
-
-2. Fluxer Website  
-   https://fluxer.app/
-
-3. Docker Documentation  
-   https://docs.docker.com/
-
-4. Docker Compose Documentation  
-   https://docs.docker.com/compose/
-
-5. Nginx Documentation  
-   https://nginx.org/en/docs/
-
-6. Git Documentation  
-   https://git-scm.com/doc
-
-7. Discord  
-   https://discord.com/
-
-8. Mattermost  
-   https://mattermost.com/
-
----
-
-## Lisensi
-
-Lisensi aplikasi mengikuti lisensi yang tercantum pada repository Fluxer.
-
-Periksa file `LICENSE` pada repository untuk mengetahui ketentuan penggunaan, modifikasi, dan distribusi source code.
+- Fluxer, repositori dan berkas deployment: https://github.com/fluxerapp/fluxer (`deploy/self-hosting`)
+- Fluxer, situs dan dokumentasi self-hosting: https://fluxer.app/ dan https://docs.fluxer.app/
+- Blog pengembang Fluxer, "How I built Fluxer, a Discord-like chat app": https://canary.fluxer.app/blog/how-i-built-fluxer-a-discord-like-chat-app
+- Ulasan perbandingan dengan alternatif Discord: https://www.sinologic.net/?p=21651
+- Docker Engine di Ubuntu: https://docs.docker.com/engine/install/ubuntu/
+- ALTCHA: https://altcha.org
+- Revolt dan Matrix/Element: https://github.com/stoatchat/self-hosted & https://matrix.org/docs/chat_basics/matrix-for-im/
