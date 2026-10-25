@@ -187,7 +187,7 @@ Hasil pengujian (isi sesuai kenyataan):
 
 3. Membuat Komunitas dan Kanal
    ![Membuat server](deploy/03-komunitas.png)
-   Dibuat komunitas **CS-IPB Lab** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. 
+   Dibuat komunitas **KDJK Kelompok 3** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. 
 
 4. Mengirim Pesan dan Lampiran
    ![Pesan](deploy/04-pesan.png)
