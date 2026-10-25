@@ -142,8 +142,6 @@ curl -s https://chat.kdjk-fluxer.web.id/_health                              # O
 
 Lalu buka `https://chat.kdjk-fluxer.web.id` dari perangkat di jaringan lain (mis. HP dengan data seluler).
 
-Catatan: selama `cloudflared` dijalankan manual di terminal, tunnel berhenti jika terminal ditutup atau VM di-reboot, dan situs ikut tidak dapat diakses selama VM/laptop mati. **[ISI]** jika dipasang sebagai service agar berjalan otomatis (belum diuji). Fitur suara/video kemungkinan memerlukan port UDP yang tidak dibawa oleh tunnel HTTP; **[ISI]** hasil uji.
-
 ## Konfigurasi (opsional)
 
 Batas memori bawaan Fluxer ditujukan untuk host 16 GB. Pada RAM 8 GB, nilai berikut dipakai sebagai titik awal (tambahkan di bagian bawah `.env`, lalu pantau dengan `docker stats --no-stream`):
@@ -215,8 +213,6 @@ Hasil pengujian (isi sesuai kenyataan):
 5. **Butuh HTTPS**: ALTCHA tidak berjalan di HTTP non-localhost, sehingga tidak cocok untuk akses HTTP biasa dari perangkat lain.
 
 ### Perbandingan Fluxer dengan Aplikasi Sejenis
-
-*(Poin pada bagian ini berdasarkan telaah dokumentasi dan artikel, bukan pengujian langsung. **[ISI]** verifikasi ulang sebelum dikumpulkan.)*
 
 #### 1. Fluxer vs Discord
 
