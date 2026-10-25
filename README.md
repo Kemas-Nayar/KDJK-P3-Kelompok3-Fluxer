@@ -9,12 +9,22 @@ Fluxer adalah aplikasi chat komunitas open source (lisensi AGPLv3) yang dapat di
 
 Pengaturan self-hosting resminya berjalan di atas Docker Compose dengan banyak layanan (sekitar 25 container menurut salah satu sumber), antara lain PostgreSQL, Valkey, NATS, Meilisearch, SeaweedFS, LiveKit, API, gateway, worker, dan Caddy sebagai proxy.
 
+**Lingkungan**
+
+| Komponen | Nilai |
+|---|---|
+| Server | VM VirtualBox (host Linux Mint), Ubuntu Server 24.04 LTS, jaringan NAT |
+| Spesifikasi | 4 vCPU, 8 GB RAM, 80 GB disk |
+| Akses publik | Cloudflare Tunnel (HTTPS dikelola Cloudflare) |
+| Domain | `chat.kdjk-fluxer.web.id` (domain dibeli di Dewabiz, DNS dikelola Cloudflare) |
+| Image | `ghcr.io/fluxerapp/fluxer-api:v1` |
+
+
 ## Instalasi
 
 Prasyarat:
-- VPS Ubuntu Server 24.04 LTS dengan RAM minimal 8 GB (lebih besar lebih aman) dan IP publik.
-- Domain/subdomain dengan A record yang mengarah ke IP VPS.
-- Port 80 dan 443 terbuka di firewall.
+- Server Ubuntu Server 24.04 LTS (VPS atau VM) dengan RAM minimal 8 GB (lebih besar lebih aman).
+- Domain/subdomain. Jalur VPS dengan IP publik: A record mengarah ke IP VPS, port 80 dan 443 terbuka. Jalur Cloudflare Tunnel: lihat bagian "Akses Publik via Cloudflare Tunnel".
 - Docker Engine dan plugin Docker Compose (ikuti panduan resmi: https://docs.docker.com/engine/install/ubuntu/).
 
 Verifikasi Docker:
@@ -40,7 +50,7 @@ curl -fsSL "$BASE/.env.example" -o .env
 chmod 600 .env
 ```
 
-Atur domain di `.env`. Nama variabel dan nilai untuk domain publik dengan HTTPS dicocokkan dengan komentar di `.env.example` versi yang diunduh. <img width="1172" height="983" alt="image" src="https://github.com/user-attachments/assets/4bbe9d8e-1e47-4057-a903-fb0fa168c5ee" />
+Atur domain di `.env` sesuai jalur akses. Untuk VPS dengan IP publik, ikuti komentar bawaan `.env` (Caddy mengurus HTTPS sendiri lewat port 80/443). Untuk VM tanpa IP publik, gunakan Cloudflare Tunnel (bagian berikut), yang nilai `.env`-nya berbeda.
 
 Ganti semua nilai `CHANGE_ME` dengan secret acak:
 
@@ -70,15 +80,69 @@ sudo docker compose ps
 
 Kemudian kunjungi `https://<domain-anda>`, masukkan setup token, dan buat akun.
 
-### Kendala yang ditemui (uji awal di VM lokal)
+> Jangan unggah `.env` ke GitHub. Tambahkan `.env` ke `.gitignore`.
 
-| Gejala | Penyebab | Solusi |
-|---|---|---|
-| Web tidak terbuka dari host, padahal `curl` di dalam VM berstatus 200 | VirtualBox mode NAT: host tidak bisa menjangkau IP VM | Tambahkan port forwarding (host 19080 ke VM 19080) |
-| Akses lewat IP/`127.0.0.1` menghasilkan halaman kosong | Caddy memilih respons berdasarkan hostname | Akses lewat nama domain yang dikonfigurasi |
-| Daftar akun: "Verification required. Try again." | Respons asli API: `SETUP_TOKEN_REQUIRED`, instance belum di-setup | Isi `FLUXER_SETUP_TOKEN` di `.env`, restart `api` |
-| Console: `crypto.subtle is undefined` / widget ALTCHA tidak muncul di Android | ALTCHA butuh Web Crypto yang hanya tersedia di *secure context* (HTTPS atau localhost) | Gunakan HTTPS (domain publik di VPS) |
+### Akses Publik via Cloudflare Tunnel
 
+VM berada di belakang NAT tanpa IP publik, sehingga akses dari internet dibuat lewat Cloudflare Tunnel: `cloudflared` di dalam VM membuat koneksi keluar ke Cloudflare, dan Cloudflare meneruskan permintaan ke Caddy lokal serta menyediakan HTTPS. Tidak ada port router atau port forwarding VirtualBox yang perlu dibuka untuk jalur ini.
+
+Prasyarat: akun Cloudflare (gratis), domain yang nameserver-nya diarahkan ke Cloudflare, dan `cloudflared` terpasang di VM (ikuti panduan resmi Cloudflare untuk Ubuntu).
+
+**1. Tambahkan domain ke Cloudflare.** Di dashboard Cloudflare pilih *Add a site* dengan paket Free, lalu ganti nameserver domain di panel registrar (Dewabiz) ke dua nameserver yang diberikan. Tunggu status situs menjadi *Active*.
+
+**2. Buat tunnel dan rute DNS.**
+
+```
+cloudflared tunnel login
+cloudflared tunnel create fluxer
+cloudflared tunnel route dns fluxer chat.kdjk-fluxer.web.id
+```
+
+Jika `route dns` gagal dengan error 1003 (record sudah ada), hapus record `chat` yang lama di *DNS → Records* pada dashboard Cloudflare, lalu ulangi.
+
+**3. Buat `~/.cloudflared/config.yml`** (ganti `<ID-TUNNEL>` dengan ID dari langkah 2; berkas `.json` kredensial bersifat rahasia):
+
+```yaml
+tunnel: <ID-TUNNEL>
+credentials-file: /home/fluxer/.cloudflared/<ID-TUNNEL>.json
+ingress:
+  - hostname: chat.kdjk-fluxer.web.id
+    service: http://localhost:19080
+  - service: http_status:404
+```
+
+**4. Sesuaikan `.env` Fluxer.** Alamat publik yang dilihat browser dibuat HTTPS, sedangkan Caddy tetap melayani HTTP biasa di port 19080 (variabel `FLUXER_HTTP_PORT` dan `FLUXER_HTTPS_PORT` tidak diubah):
+
+```
+FLUXER_DOMAIN=chat.kdjk-fluxer.web.id
+FLUXER_PUBLIC_SCHEME=https
+FLUXER_PUBLIC_PORT=443
+FLUXER_PUBLIC_ORIGIN=https://chat.kdjk-fluxer.web.id
+FLUXER_EDGE_SITE_ADDRESS=http://chat.kdjk-fluxer.web.id
+FLUXER_HTTP_PORT=19080
+FLUXER_HTTPS_PORT=127.0.0.1:443
+```
+
+**5. Terapkan dan jalankan tunnel.**
+
+```
+cd /opt/fluxer
+sudo docker compose config --quiet
+sudo docker compose up -d
+sudo docker compose ps
+cloudflared tunnel run fluxer      # biarkan berjalan (mis. di tmux)
+```
+
+**6. Verifikasi.**
+
+```
+curl -s -H 'Host: chat.kdjk-fluxer.web.id' http://127.0.0.1:19080/_health   # OK (langsung ke Caddy)
+curl -s https://chat.kdjk-fluxer.web.id/_health                              # OK (lewat tunnel)
+```
+
+Lalu buka `https://chat.kdjk-fluxer.web.id` dari perangkat di jaringan lain (mis. HP dengan data seluler).
+
+Catatan: selama `cloudflared` dijalankan manual di terminal, tunnel berhenti jika terminal ditutup atau VM di-reboot, dan situs ikut tidak dapat diakses selama VM/laptop mati. **[ISI]** jika dipasang sebagai service agar berjalan otomatis (belum diuji). Fitur suara/video kemungkinan memerlukan port UDP yang tidak dibawa oleh tunnel HTTP; **[ISI]** hasil uji.
 
 ## Konfigurasi (opsional)
 
@@ -113,6 +177,25 @@ Hasil pengujian (isi sesuai kenyataan):
 | Kirim dan terima pesan | <img width="1600" height="873" alt="image" src="https://github.com/user-attachments/assets/41aaacc7-7b88-4723-b157-f10c830533ed" /> |
 | Upload lampiran | <img width="956" height="409" alt="image" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
 
+1. Halaman Setup dan Registrasi
+   ![Halaman registrasi](SS%20Web/01-registrasi.png)
+   Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama. **[ISI]**
+
+2. Halaman Utama
+   ![Halaman utama](SS%20Web/02-halaman-utama.png)
+   Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung. **[ISI]**
+
+3. Membuat Komunitas dan Kanal
+   ![Membuat server](SS%20Web/03-komunitas.png)
+   Dibuat komunitas **CS-IPB Lab** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. **[ISI]**
+
+4. Mengirim Pesan dan Lampiran
+   ![Pesan](SS%20Web/04-pesan.png)
+   Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal. **[ISI]**
+
+5. Pengaturan Pengguna
+   ![Pengaturan](SS%20Web/05-pengaturan.png)
+   Pengguna dapat mengubah profil dan tampilan. **[ISI]**
 
 ## Pembahasan
 
