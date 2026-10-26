@@ -195,6 +195,259 @@ Hasil pengujian (isi sesuai kenyataan):
    ![Pengaturan](deploy/05-pengaturan.png)
    Pengguna dapat mengubah profil dan tampilan.
 
+## Pemeliharaan (Maintenance)
+
+Stack Fluxer terdiri dari banyak container, jadi pemeliharaan rutin dibagi menjadi: memeriksa kesehatan, mem-backup data, memperbarui versi, dan menjaga disk. Semua perintah dijalankan dari `/opt/fluxer`. Bagian Otomatisasi setelah ini menjalankan sebagian besar pekerjaan ini secara terjadwal.
+
+### Pemeriksaan Rutin
+
+| Seberapa sering | Yang diperiksa | Perintah |
+| --- | --- | --- |
+| **Harian** | Semua container *healthy*, tidak ada yang restart terus-menerus | `sudo docker compose ps` |
+| **Harian** | Error terbaru pada API dan gateway | `sudo docker compose logs --since 24h --tail 100 api gateway` |
+| **Mingguan** | Pemakaian RAM dan CPU per container (acuan batas memori pada bagian Konfigurasi) | `sudo docker stats --no-stream` |
+| **Mingguan** | Sisa disk VM dan ukuran Docker | `df -h /` dan `sudo docker system df` |
+| **Mingguan** | Backup terakhir ada dan ukurannya wajar | `ls -lh /var/backups/fluxer` |
+| **Bulanan** | Uji pulihkan backup di VM lain (lihat Restore) | - |
+| **Bulanan** | Pembaruan keamanan Ubuntu | `sudo apt update && sudo apt upgrade` |
+
+---
+
+### Backup
+
+Yang perlu disimpan dan yang tidak:
+
+| Data | Lokasi | Dibackup? | Alasan |
+| --- | --- | --- | --- |
+| **Database** (akun, server, kanal, pesan) | volume `postgres-data` | **Ya**, lewat `pg_dump` | Data utama |
+| **Lampiran dan upload** | volume `seaweedfs-data` | **Ya**, salin volume | Tidak ada di database |
+| **`.env`, `Caddyfile`, `docker-compose.yml`** | `/opt/fluxer` | **Ya** | Berisi secret dan pengaturan domain |
+| **Kredensial Cloudflare Tunnel** | `~/.cloudflared` | **Ya** | Tanpa ini tunnel harus dibuat ulang |
+| **Indeks pencarian** | volume `meilisearch-data` | Opsional (`INCLUDE_MEILI=1`) | Turunan dari data lain; belum kami uji apakah dibangun ulang otomatis |
+| **Cache dan antrean** | volume `valkey-data`, `nats-data` | Tidak | Data sementara (asumsi, belum diuji) |
+
+**Backup manual** (skrip dari bagian Otomatisasi), hasilnya di `/var/backups/fluxer/<tanggal-jam>/`:
+```bash
+sudo /opt/fluxer/scripts/backup.sh
+```
+
+*Isi folder backup:* `postgres.dump`, `seaweedfs-data.tgz`, `config.tgz`, `cloudflared.tgz` (jika ada), dan `SHA256SUMS`.
+
+Simpan salinan di luar VM. Backup di disk yang sama ikut hilang jika VM rusak. Salin ke komputer host atau penyimpanan lain (lihat `POST_BACKUP_CMD` di `maintenance.conf.example`). File backup berisi secret dari `.env`, jadi jangan diunggah ke GitHub.
+
+*Catatan:* database di-dump saat berjalan (aman), sedangkan volume SeaweedFS disalin saat berjalan sehingga bisa terlewat lampiran yang diunggah tepat saat penyalinan. Untuk salinan yang pasti konsisten, set `STOP_SEAWEEDFS=1` (upload terhenti beberapa detik).
+
+---
+
+### Restore (Memulihkan Data)
+
+Lakukan di VM yang sama atau VM baru dengan instalasi Fluxer yang sudah terpasang. Ganti `<FOLDER>` dengan folder backup, mis. `/var/backups/fluxer/20261026-023000`.
+
+```bash
+cd /opt/fluxer
+(cd <FOLDER> && sha256sum -c SHA256SUMS)          # pastikan berkas utuh
+sudo docker compose down                           # volume tidak terhapus
+sudo docker compose up -d postgres
+
+# 1. Database
+sudo docker compose exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+sudo docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < <FOLDER>/postgres.dump
+
+# 2. Lampiran (SeaweedFS)
+sudo docker run --rm -v fluxer_seaweedfs-data:/data -v <FOLDER>:/backup alpine:3 \
+  sh -c 'find /data -mindepth 1 -delete && tar xzf /backup/seaweedfs-data.tgz -C /data'
+
+# 3. Jalankan kembali dan verifikasi
+sudo docker compose up -d
+sudo /opt/fluxer/scripts/healthcheck.sh
+```
+
+Pada VM baru, pulihkan juga `config.tgz` ke `/opt/fluxer` (berisi `.env` lama, termasuk semua secret) sebelum menjalankan stack, dan `cloudflared.tgz` ke `/home/fluxer`. Jika `.env` berbeda dari yang dipakai saat backup, akun dan sesi lama bisa tidak valid.
+
+---
+
+### Pembaruan Versi
+
+Image memakai tag `v1` yang bergerak (`FLUXER_IMAGE_TAG=v1`), jadi `docker compose pull` bisa membawa versi baru kapan saja. Karena itu pembaruan dijalankan manual dan terencana, bukan otomatis:
+
+```bash
+sudo /opt/fluxer/scripts/update.sh
+```
+
+Skrip ini melakukan: backup, mencatat versi image yang sedang dipakai (`/var/backups/fluxer/digests-before-update-*.txt`), pull, `up -d`, menunggu health check lolos, lalu membersihkan image lama. Jika gagal, notifikasi terkirim (bila webhook diatur) dan pesan error muncul di terminal.
+
+**Rollback:** `FLUXER_IMAGE_TAG` berlaku untuk semua image sekaligus, sehingga satu digest tidak bisa dipakai untuk semuanya. Cara yang realistis: jika upstream menyediakan tag versi spesifik (mis. `v1.2.3`), isi `FLUXER_IMAGE_TAG` di `.env` dengan tag lama lalu `sudo docker compose up -d`. Berkas `digests-before-update-*.txt` mencatat versi persis yang berjalan sebelumnya sebagai bukti dan acuan. Jika versi baru sudah mengubah skema database dan data bermasalah, pulihkan database dari backup yang dibuat tepat sebelum update. Prosedur rollback ini belum diuji pada instalasi kami.
+
+Sebelum update, baca catatan rilis di [GitHub Fluxer](https://github.com/fluxerapp/fluxer). Pembaruan sistem operasi (`apt`) dilakukan terpisah; reboot VM setelah pembaruan kernel.
+
+---
+
+### Log dan Disk
+
+Berkas compose tidak mengatur rotasi log, sehingga log setiap container bisa terus membesar di disk 80 GB. Batasi lewat `/etc/docker/daemon.json`:
+
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "3" }
+}
+```
+
+```bash
+sudo systemctl restart docker
+cd /opt/fluxer && sudo docker compose up -d --force-recreate   # pengaturan baru hanya berlaku untuk container baru
+```
+
+**Bersih-bersih aman** (tidak menyentuh volume data):
+```bash
+sudo docker image prune -f           # image yang tidak terpakai
+sudo journalctl --vacuum-time=14d    # log sistem lama
+```
+
+> ⚠️ **Peringatan:** Hindari `docker compose down -v`, `docker volume prune`, dan `docker system prune --volumes`. Ketiganya menghapus volume, yaitu seluruh data Fluxer.
+
+---
+
+### Masalah Umum
+
+| Gejala | Kemungkinan Penyebab | Tindakan |
+| --- | --- | --- |
+| **Halaman daftar menampilkan "Verification required"** | Setup token belum diisi (`SETUP_TOKEN_REQUIRED`) | Pastikan `FLUXER_SETUP_TOKEN` ada di `.env`, lalu `sudo docker compose up -d` |
+| **Situs tidak terbuka dari internet, tetapi `curl http://127.0.0.1:19080/_health` menjawab OK** | `cloudflared` mati | `sudo systemctl status cloudflared-fluxer`, lihat log dengan `journalctl -u cloudflared-fluxer -n 50` |
+| **`route dns` gagal dengan error 1003** | Record DNS lama masih ada | Hapus record lama di dashboard Cloudflare, ulangi |
+| **Container sering restart atau VM lambat** | Memori kurang | `sudo docker stats --no-stream`, turunkan batas memori (bagian Konfigurasi) |
+| **Disk penuh** | Log, image, atau backup lokal menumpuk | `docker system df`, atur rotasi log, kecilkan `RETENTION_DAYS` |
+| **Setelah reboot VM, situs tidak naik** | Docker tidak aktif saat boot | `sudo systemctl enable --now docker`, container memakai `restart: unless-stopped` dan naik sendiri |
+| **Reboot komputer host, VM mati** | VM VirtualBox tidak start otomatis | Jalankan VM kembali, atau atur autostart VirtualBox di host |
+
+---
+
+## Otomatisasi
+
+Pekerjaan berulang dijadwalkan dengan `systemd timer` di VM (dipilih dibanding cron karena log tersimpan di `journalctl`, dan pekerjaan yang terlewat karena VM mati dijalankan saat VM hidup kembali). Skripnya ada di repositori ini dan sudah diperiksa sintaksnya dengan `bash -n` serta diuji dengan docker tiruan, tetapi belum dijalankan pada instalasi Fluxer nyata. Jalankan checklist verifikasi di bawah setelah memasang.
+
+| Komponen | Berkas | Fungsi | Jadwal |
+| --- | --- | --- | --- |
+| **Backup** | `deploy/scripts/backup.sh`, `fluxer-backup.timer` | Dump database, salin upload dan konfigurasi, checksum, hapus backup lebih dari 7 hari | Setiap hari 02:30 |
+| **Health check** | `deploy/scripts/healthcheck.sh`, `fluxer-healthcheck.timer` | Cek container, Caddy lokal, alamat publik, disk, memori, umur backup; notifikasi saat status berubah | Setiap 5 menit |
+| **Tunnel** | `cloudflared-fluxer.service` | Menjalankan Cloudflare Tunnel sebagai layanan (pengganti tmux), start saat boot dan restart jika mati | Terus berjalan |
+| **Update** | `deploy/scripts/update.sh` | Update terkontrol dengan backup di awal | Manual |
+| **CI** | `.github/workflows/validate.yml` | Validasi compose, ShellCheck, cek secret tidak ter-commit | Setiap push, PR, dan mingguan |
+
+---
+
+### Memasang
+
+Dari VM, di dalam salinan repositori ini (`git clone <URL-REPOSITORI-KELOMPOK>`):
+
+```bash
+# Zona waktu agar jadwal sesuai WIB
+sudo timedatectl set-timezone Asia/Jakarta
+
+# Skrip
+sudo install -d -m 755 /opt/fluxer/scripts
+sudo install -m 755 deploy/scripts/*.sh /opt/fluxer/scripts/
+sudo install -m 600 deploy/scripts/maintenance.conf.example /opt/fluxer/scripts/maintenance.conf
+
+# Unit systemd
+sudo install -m 644 deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+Periksa dua hal sebelum mengaktifkan: lokasi `cloudflared` (`command -v cloudflared`, harus sama dengan `ExecStart` di `cloudflared-fluxer.service`) dan nama pengguna `fluxer` pada berkas yang sama (sesuaikan jika berbeda). Hentikan dulu `cloudflared tunnel run fluxer` yang berjalan di tmux, lalu:
+
+```bash
+sudo systemctl enable --now cloudflared-fluxer.service
+sudo systemctl enable --now fluxer-backup.timer fluxer-healthcheck.timer
+systemctl list-timers 'fluxer-*'
+```
+
+---
+
+### Pengaturan
+
+Semua opsi ada di `/opt/fluxer/scripts/maintenance.conf` (contoh dan penjelasan: `deploy/scripts/maintenance.conf.example`). Yang paling berguna:
+
+| Opsi | Bawaan | Keterangan |
+| --- | --- | --- |
+| `RETENTION_DAYS` | `7` | Lama backup lokal disimpan |
+| `WEBHOOK_URL` | *kosong* | URL webhook Discord atau Slack untuk notifikasi. Format payload mengikuti keduanya, tetapi belum kami uji |
+| `POST_BACKUP_CMD` | *kosong* | Perintah setelah backup, mis. `rsync` ke komputer host |
+| `INCLUDE_MEILI` | `0` | `1` untuk ikut membackup indeks pencarian |
+| `STOP_SEAWEEDFS` | `0` | `1` untuk salinan upload yang pasti konsisten |
+| `CHECK_PUBLIC` | `1` | `0` jika instance tidak memakai alamat publik |
+
+**Mengubah jadwal:** `sudo systemctl edit --full fluxer-backup.timer` (ubah `OnCalendar`), lalu `sudo systemctl restart fluxer-backup.timer`.
+
+---
+
+### Verifikasi Otomatisasi
+
+Isi kolom hasil sesuai kenyataan setelah dicoba.
+
+| Pengujian | Cara | Hasil |
+| --- | --- | --- |
+| **Backup manual berjalan** | `sudo /opt/fluxer/scripts/backup.sh`, lalu cek isi folder dan `sha256sum -c SHA256SUMS` | |
+| **Timer terdaftar** | `systemctl list-timers 'fluxer-*'` | |
+| **Health check lolos** | `sudo /opt/fluxer/scripts/healthcheck.sh` (harus OK) | |
+| **Health check mendeteksi gangguan** | `sudo systemctl stop cloudflared-fluxer`, jalankan health check (harus MASALAH), lalu start kembali | |
+| **Notifikasi terkirim** | Isi `WEBHOOK_URL`, ulangi pengujian di atas | |
+| **Tunnel naik sendiri setelah reboot** | `sudo reboot`, lalu buka situs dari HP | |
+| **Restore berhasil** | Ikuti Restore di VM cadangan, login dengan akun lama | |
+
+*Log pekerjaan terjadwal:*
+```bash
+journalctl -u fluxer-backup -n 50
+journalctl -u fluxer-healthcheck -n 50
+```
+
+---
+
+### CI di GitHub
+
+Workflow `.github/workflows/validate.yml` berjalan otomatis di tab Actions dan memeriksa tiga hal:
+1. `docker compose config` pada `deploy/self-hosting`
+2. ShellCheck untuk semua skrip di `deploy/scripts`
+3. Tidak ada `.env`, `maintenance.conf`, file backup, atau kredensial Cloudflare yang ikut ter-*commit*. Berkas `.gitignore` sudah menyertakan pola-pola tersebut.
+
+---
+
+### Yang Sengaja Tidak Diotomatisasi
+
+- **Update versi:** Tag `v1` bergerak dan pembaruan dapat mengubah skema database, jadi update dijalankan manual lewat `update.sh` saat ada yang bisa mengawasi.
+- **Restore:** Menimpa data yang berjalan, sehingga harus keputusan manusia.
+- **Rotasi secret:** Mengganti nilai di `.env` membuat sesi dan token lama tidak berlaku.
+
+---
+
+## Cara Pemakaian
+
+### Hasil Pengujian Fungsi Utama
+
+| No | Pengujian | Hasil / Dokumentasi |
+| --- | --- | --- |
+| 1 | **Semua layanan berjalan** | <img width="1915" height="703" alt="Status Service Docker" src="https://github.com/user-attachments/assets/ae5e5983-ae88-4504-a325-7192e0b3e091" /> |
+| 2 | **Web dapat dibuka dari internet** | <img width="1280" height="1498" alt="Akses Web Mobile" src="https://github.com/user-attachments/assets/701f75d5-9f95-4b79-9e27-524e464078e0" /> |
+| 3 | **Setup dan pembuatan akun** | <img width="1280" height="2772" alt="Halaman Registrasi" src="https://github.com/user-attachments/assets/b0a934a9-99cb-48de-9325-8e8dae561ed8" /> |
+| 4 | **Kirim dan terima pesan** | <img width="1600" height="873" alt="Interaksi Chat" src="https://github.com/user-attachments/assets/41aaacc7-7b88-4723-b157-f10c830533ed" /> |
+| 5 | **Upload lampiran** | <img width="956" height="409" alt="Upload Lampiran" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
+
+---
+
+### Detail Alur Penggunaan
+
+1. **Halaman Setup dan Registrasi**  
+   Pada instance baru, pengguna menyelesaikan setup awal menggunakan setup token lalu mendaftarkan akun administrator/pertama.
+2. **Halaman Utama**  
+   Setelah login, pengguna melihat daftar server, kanal teks/suara, dan daftar pesan langsung (*Direct Messages*).
+3. **Membuat Komunitas dan Kanal**  
+   Dibuat komunitas **KDJK Kelompok 3** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`.
+4. **Mengirim Pesan dan Lampiran**  
+   Beberapa akun demo saling bertukar pesan real-time dan mengunggah lampiran berkas pada kanal.
+5. **Pengaturan Pengguna**  
+   Pengguna dapat mengubah profil, nama tampilan, kata sandi, dan tema tampilan aplikasi.
+
+---
 ## Pembahasan
 
 ### Kelebihan Fluxer
