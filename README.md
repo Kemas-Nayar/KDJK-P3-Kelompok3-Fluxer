@@ -493,7 +493,7 @@ Workflow `.github/workflows/validate.yml` berjalan otomatis di tab Actions dan m
 
 ### Kesimpulan
 
-*(Draf, sesuaikan setelah pengujian selesai.)* Fluxer cocok bagi komunitas yang ingin alternatif Discord dengan kontrol data penuh dan pengalaman penggunaan yang familiar. Namun, kebutuhan sumber daya yang besar, konfigurasi yang rumit, dan statusnya yang masih berkembang membuatnya kurang ideal untuk server kecil berspesifikasi rendah. Aplikasi seperti Discord (kemudahan dan ekosistem), Revolt (stabilitas), atau Matrix/Element (federasi dan enkripsi) bisa lebih tepat sesuai kebutuhan.
+Fluxer cocok bagi komunitas yang ingin alternatif Discord dengan kontrol data penuh dan pengalaman penggunaan yang familiar. Namun, kebutuhan sumber daya yang besar, konfigurasi yang rumit, dan statusnya yang masih berkembang membuatnya kurang ideal untuk server kecil berspesifikasi rendah. Aplikasi seperti Discord (kemudahan dan ekosistem), Revolt (stabilitas), atau Matrix/Element (federasi dan enkripsi) bisa lebih tepat sesuai kebutuhan.
 
 
 ## Referensi
