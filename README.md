@@ -163,38 +163,6 @@ FLUXER_LIVEKIT_MEMORY_LIMIT=384mb
 Daftar variabel lengkap ada di `.env.example`. Nilai ini eksperimen, bukan konfigurasi resmi yang dijamin stabil.
 
 
-## Cara Pemakaian
-
-Hasil pengujian (isi sesuai kenyataan):
-
-| Pengujian | Hasil |
-|---|---|
-| Semua layanan berjalan | <img width="1915" height="703" alt="image" src="https://github.com/user-attachments/assets/ae5e5983-ae88-4504-a325-7192e0b3e091" /> |
-| Web dapat dibuka dari internet | <img width="1280" height="1498" alt="Screenshot_2026-10-25-13-14-47-340_com android chrome-edit" src="https://github.com/user-attachments/assets/701f75d5-9f95-4b79-9e27-524e464078e0" /> | 
-| Setup dan pembuatan akun | <img width="1280" height="2772" alt="Screenshot_2026-10-25-13-16-25-168_com android chrome" src="https://github.com/user-attachments/assets/b0a934a9-99cb-48de-9325-8e8dae561ed8" /> |
-| Kirim dan terima pesan | <img width="1600" height="873" alt="image" src="https://github.com/user-attachments/assets/41aaacc7-7b88-4723-b157-f10c830533ed" /> |
-| Upload lampiran | <img width="956" height="409" alt="image" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
-
-1. Halaman Setup dan Registrasi
-   ![Halaman registrasi](deploy/01-registrasi.png)
-   Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama.
-
-2. Halaman Utama
-   ![Halaman utama](deploy/02-halaman-utama.png)
-   Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung.
-
-3. Membuat Komunitas dan Kanal
-   ![Membuat server](deploy/03-komunitas.png)
-   Dibuat komunitas **KDJK Kelompok 3** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. 
-
-4. Mengirim Pesan dan Lampiran
-   ![Pesan](deploy/04-pesan.png)
-   Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal.
-
-5. Pengaturan Pengguna
-   ![Pengaturan](deploy/05-pengaturan.png)
-   Pengguna dapat mengubah profil dan tampilan.
-
 ## Pemeliharaan (Maintenance)
 
 Stack Fluxer terdiri dari banyak container, jadi pemeliharaan rutin dibagi menjadi: memeriksa kesehatan, mem-backup data, memperbarui versi, dan menjaga disk. Semua perintah dijalankan dari `/opt/fluxer`. Bagian Otomatisasi setelah ini menjalankan sebagian besar pekerjaan ini secara terjadwal.
@@ -432,6 +400,26 @@ Workflow `.github/workflows/validate.yml` berjalan otomatis di tab Actions dan m
 | 4 | **Kirim dan terima pesan** | <img width="1600" height="873" alt="Interaksi Chat" src="https://github.com/user-attachments/assets/41aaacc7-7b88-4723-b157-f10c830533ed" /> |
 | 5 | **Upload lampiran** | <img width="956" height="409" alt="Upload Lampiran" src="https://github.com/user-attachments/assets/6068c091-2608-4f18-ba46-65f1fc034596" /> |
 
+1. Halaman Setup dan Registrasi
+   ![Halaman registrasi](deploy/01-registrasi.png)
+   Pada instance baru, pengguna menyelesaikan setup dengan setup token lalu mendaftarkan akun pertama.
+
+2. Halaman Utama
+   ![Halaman utama](deploy/02-halaman-utama.png)
+   Setelah login, pengguna melihat daftar server, kanal, dan pesan langsung.
+
+3. Membuat Komunitas dan Kanal
+   ![Membuat server](deploy/03-komunitas.png)
+   Dibuat komunitas **KDJK Kelompok 3** dengan kanal `#general`, `#pengumuman`, dan `#dokumentasi`. 
+
+4. Mengirim Pesan dan Lampiran
+   ![Pesan](deploy/04-pesan.png)
+   Beberapa akun demo saling bertukar pesan dan mengunggah lampiran pada kanal.
+
+5. Pengaturan Pengguna
+   ![Pengaturan](deploy/05-pengaturan.png)
+   Pengguna dapat mengubah profil dan tampilan.
+
 ---
 
 ### Detail Alur Penggunaan
@@ -493,7 +481,9 @@ Workflow `.github/workflows/validate.yml` berjalan otomatis di tab Actions dan m
 
 ### Kesimpulan
 
-Fluxer cocok bagi komunitas yang ingin alternatif Discord dengan kontrol data penuh dan pengalaman penggunaan yang familiar. Namun, kebutuhan sumber daya yang besar, konfigurasi yang rumit, dan statusnya yang masih berkembang membuatnya kurang ideal untuk server kecil berspesifikasi rendah. Aplikasi seperti Discord (kemudahan dan ekosistem), Revolt (stabilitas), atau Matrix/Element (federasi dan enkripsi) bisa lebih tepat sesuai kebutuhan.
+Fluxer berhasil di-deploy menggunakan Docker Compose dan diakses publik melalui Cloudflare Tunnel untuk fitur pesan teks serta unggah berkas. Sebagai alternatif Discord yang open-source dan self-hosted, Fluxer menawarkan kontrol data penuh dengan antarmuka yang familiar bagi pengguna. Namun, aplikasi ini memiliki keterbatasan teknis di mana fitur panggilan suara dan video (WebRTC/UDP) hanya berfungsi di jaringan lokal karena keterbatasan Cloudflare Tunnel standar, sehingga deployment tingkat produksi penuh memerlukan IP publik langsung atau server TURN eksternal.
+
+Secara keseluruhan, Fluxer sangat berpotensi bagi komunitas yang memprioritaskan privasi dan kontrol data mandiri. Meski demikian, kebutuhan sumber daya yang besar, konfigurasi rumit, serta perutean WebRTC yang sensitif membuatnya kurang ideal untuk server berspesifikasi rendah. Bagi pengguna yang lebih membutuhkan kemudahan ekosistem, fleksibilitas federasi, atau enkripsi end-to-end, platform seperti Discord, Revolt, atau Matrix/Element dapat menjadi pilihan alternatif yang lebih tepat sesuai kebutuhan.
 
 
 ## Referensi
